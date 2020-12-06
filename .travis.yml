@@ -1,34 +1,58 @@
 sudo: required
-language: node_js
-node_js:
-- '8'
 addons:
   apt:
     update: true
     packages:
     - docker-ce
-notifications:
-  webhooks:
-    urls:
-    - https://webhooks.gitter.im/e/063276d3941fa8443947
-    on_success: always
-    on_failure: always
-    on_start: never
 services:
 - docker
-before_script:
-- docker run --rm --privileged multiarch/qemu-user-static:register --reset
 script:
-- source ./.travis/travis_utils.sh
-- build_message No test in this build, only docker image will be built...
+- export DOCKER_CLI_EXPERIMENTAL=enabled
+- source utils.sh
+- alpine_arm_sha=$(get_manifest_sha "treehouses/alpine:latest" "arm")
+- echo $alpine_arm_sha
+- moodle_arm_sha=$(get_manifest_sha "treehouses/moodle:latest" "arm")
+- echo $moodle_arm_sha
+- flag_arm=$(is_base "treehouses/alpine@"$alpine_arm_sha "treehouses/moodle@"$moodle_arm_sha)
+- echo $flag_arm
+- alpine_amd64_sha=$(get_manifest_sha "treehouses/alpine:latest" "amd64")
+- echo $alpine_amd64_sha
+- moodle_amd64_sha=$(get_manifest_sha "treehouses/moodle:latest" "amd64")
+- echo $moodle_amd64_sha
+- flag_amd64=$(is_base "treehouses/alpine@"$alpine_amd64_sha "treehouses/moodle@"$moodle_amd64_sha)
+- echo $flag_amd64
+- alpine_arm64_sha=$(get_manifest_sha "treehouses/alpine:latest" "arm64")
+- echo $alpine_arm64_sha
+- moodle_arm64_sha=$(get_manifest_sha "treehouses/moodle:latest" "arm64")
+- echo $moodle_arm64_sha
+- flag_arm64=$(is_base "treehouses/alpine@"$alpine_arm64_sha "treehouses/moodle@"$moodle_arm64_sha)
+- echo $flag_arm64
+- echo $DOCKERAPIKEY | docker login -u "neethumohan1212" --password-stdin
+- docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+- build_image "treehouses/alpine:latest" arm "treehouses/moodle" $flag_arm
+- build_image "treehouses/alpine:latest" arm64 "treehouses/moodle" $flag_arm64
+- build_image "treehouses/alpine:latest" amd64 "treehouses/moodle" $flag_amd64
+- flag=$(change $flag_arm $flag_arm64 $flag_amd64)
+- flag="true"
+- echo $flag
+before_deploy:
+- deploy_image "treehouses/moodle" arm
+- deploy_image "treehouses/moodle" arm64
+- deploy_image "treehouses/moodle" amd64
+- tag1="latest"
+- tag2=$(date +%Y%m%d%H%M)
+- echo $tag2
+- create_manifests treehouses/moodle $tag1 $tag2 treehouses/moodle-tags:amd64 treehouses/moodle-tags:arm
+  treehouses/moodle-tags:arm64
+- docker manifest inspect treehouses/moodle:$tag1
+- docker manifest inspect treehouses/moodle:$tag2
 deploy:
-  provider: script
+- provider: script
+  script: docker manifest push treehouses/moodle:$tag1; docker manifest push treehouses/moodle:$tag2
   skip_cleanup: true
-  script: "./.travis/deploy_docker.sh"
   on:
     all_branches: true
+    condition: "$flag = true"
 env:
   global:
-  # DOCKER CREDS
-  - secure: nxRmWtul90EVGmL/X3wxQpkmVtaX7o1fmF6UuD1KmT1Jtn/Mdrdjh6SBhu7lkFeKQbBv2KgCAnbSBDXWTFGduid1eVanX014DihN7h3mAgcsV8qlvia4rReWUp800S2sLHUEQxI3n0l3BSy2u7WafCwZGgW9r7Hw+Ii9nG86rCKUSq4e676zhKyJceEUX/Ayuijnf+Nw4wmZERk6P15zCqv9qe5juTRA4HxGw4tqn+Tu69La0naMjNfX+BGWjRU5rDkTRMtHJvNzqJ0GiXWjAQFYc+z6+vShbr7EAw4sspQsBW2jaAU0MoiR4jDDk+7ciwKJlDO+Fzq7n6hKggO8HEShzxYbWKT5t15toeByHmU+NKzcZRj7wOVd12y4s7qKFQWD4CvMl2ArwGt1q5wTHIJmvkMzBSAh9+e4cd9q0qvRvEwddrGcsVJPIJnfvej213YYWxXp5EooQcdwFxdtUpZZIbFI93QlDh9+s7d5xrukRgJRBf8cAbBIPpXNFhQcM0ZjbMUZw1SnqxJ75zSBfHnYvr7rhe3XLjKFx07USzt1cLRw318yLdPRBtfguj+tcr7YKgn1aa4XdH0UUZQ9e9Y9U5gzmWaAplGxrynZF/wYS0DDaxdbTtln9C+VEzQBD4AgaIs/YFj52JCZ5B1E4hFRCYpK/rirHE5C01PwteA=
-  - secure: IB2QR3tCyzt15mqrgTjvnDnn9fFmrbn6kWbpyobFMBCp5AqfK9RLCkxgISrcW1FGSV+pQ5CGAhgRsnyagGMSu9sGCt21VMV8WDALIi/C3PAPGutnrrUQkXaVvRe6e9p35PxjSkQ2sxRd0gSz/sVIRJ/rUHC6t1JnEgnebDvJSeU3SSwrPVlSeFyBv3gHPDkIODxpr7p024pF/slTM8XJJRYmEiVqUPXKGbzFhSOfdM+oZLU3Ned8FaBA1kAynq81wAylcwNQWSmRizrq2KQlr8OBsTJz+PF+eG1h9j/SG4os86JVfBpxtE4PqsPxQ7ppkTvk57kKXruGq4ZPp7OUDWlDW4t47Ez/KV5KLAt0GQdPbDvoD+RuJhBkPry9BqUGYy4W08gcm8BdXKRdeVYDOaVRpeBynWmqFtIYjJELSEXqaXhdSq2+0Ss5URMQ+Rja3J5NPzyT+0DJgdPvhdWVlu/NnBvmQnj+qD7fzL89Chx5TjRfBE6rFbmKWh+Nn0TeFJPkK2idsyY8NHe0wGjdnkN3JcwlITtmLqJ7RpUQvIEDL9MjSGaKZLMrdmTYjYpHbrR6kgypFEbY4MIJK1cLus/P+DzTxhjNO42JgB57Ao8E/BbaHSpIq82VtGGbIrTCpymdvIl3C+dNCEv+ppcVW3m7Sy4UsJzos2o3zXktQJ0=
+  - secure: gSDM0Sgzk83VPSj2zcol+NlALHf0KcJtnciWegNsciCvDJ6ZFWhNh4TFfWadHPCGrGyyud4Gt3n6MOvGuicWDjiIq0u1k4UoVFCwsVUBJ5OMSIDGOzc0idgbRvam8kDifaaUy3v2srdDprZ3NrCB1Y4Azk/wJSQtkBgUGYoTVliKDtIONOnuSGt0YkD6UUES2q52ryUwX7fmln0tOBNgsBLRAqf0hy3Nvk8kldUvuC4uXEGuenIny73JybPd5H9q+c8tNjAGkVS4XJsqA+nvXl4rqD7g8YYv2qlVZgMSoZdWLo6IxJU9a3qXXTOuhBUi2PcmCSIkA7uOEnf/I3zrauClxOdkcKiO9EBcuRiESnnK5/n/lbItYJoekLd0SmBpM0suCHAvvujRR9BkF9WqslM+NXwtGXVRqUrR2PD/jS5rj6hsIkjZ/++290VJM1kCPfddvxDQl8HYCDMAO6BGqJINadDecFd0Pv/JMLUpZi3ydEeOzSgVyI9RVQv29/VvnxjfZ86D78f71kHKs21nzBsGBXJFKYsG8vjHG/L9/Sv2DWsEZ6PNX9Q2yrqZPy+y68JtwMlFolCaL4HMqCmDFnPsbB8BBmypGwKwxEc17wUGS1NP7SbRY3lrtWQ0DggtuXwjoCQmSNpc3ZoiDG7o9CYFWOJkM9HVw7Y7UuBkWHA=
