@@ -2,7 +2,7 @@ FROM {{base_image}}
 
 LABEL MAINTAINER "Dashlorde <zhouyunlu0216@gmail.com>"
 
-ENV version '3.4.0'
+ENV version '3.10.0'
 
 ADD ./start.sh /etc/nginx/start.sh
 COPY ./moodle /etc/nginx/sites-available/moodle.conf.template
